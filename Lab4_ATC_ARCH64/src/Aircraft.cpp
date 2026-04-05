@@ -26,12 +26,11 @@ Aircraft::Aircraft(int id, double x, double y, double z, double sx, double sy, d
 	// Worker function parameters: (void*)this
 	// Thread handler id: thread_id
 	//Note: you need to verify if thread creation successfully done, otherwise print the error
-    pthread_t thread_id;
-    int ret = pthread_create(&thread_id, (void*)this, updatePositionThread, NULL);
+    int ret = pthread_create(&thread_id, NULL, updatePositionThread, (void*)this);
     if (ret==0) {
-        printf("Worker Thread created successfully");
+        printf("Worker Thread created successfully\n");
     } else {
-        printf("ERROR: Worker Thread could NOT be created");
+        printf("ERROR: Worker Thread could NOT be created\n");
     }
 }
 
@@ -244,7 +243,8 @@ int Aircraft::getID(){
 
 //Coen320_Lab3 (Task2): look at the message creation example here
 Message Aircraft::createEnterAirspaceMessage(int planeID){
-	Message msg;
+	Message msg{};
+    msg.header = false;
 	msg.type = MessageType::ENTER_AIRSPACE;
 	msg.planeID = planeID;
 	msg.data = 	NULL;  // Allocate dynamically and copy info data
@@ -254,7 +254,8 @@ Message Aircraft::createEnterAirspaceMessage(int planeID){
 //Coen320_Lab3(Task3): complete the createPositionUpdateMessage function with what you learned above
 Message Aircraft::createExitAirspaceMessage(int planeID){
 
-	Message msg;
+	Message msg{};
+    msg.header = false;
 	msg.type = MessageType::EXIT_AIRSPACE;// Use the correct Message type
 	msg.planeID = planeID;// Use the passed Plane ID
 	msg.data = NULL;
@@ -264,7 +265,8 @@ Message Aircraft::createExitAirspaceMessage(int planeID){
 //Coen320_Lab3(Task4): complete the createPositionUpdateMessage function with what you learned above
 Message Aircraft::createPositionUpdateMessage(int planeID, const msg_plane_info& info) {
 
-    Message msg;
+    Message msg{};
+    msg.header = false{}
     msg.type = MessageType::POSITION_UPDATE; // Use the correct Message type
     msg.planeID = planeID;// Use the passed Plane ID
     msg.data = (void*)&info;  // Allocate and copy info data
