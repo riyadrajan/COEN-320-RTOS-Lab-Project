@@ -1,5 +1,6 @@
 #include "Radar.h"
 #include <sys/dispatch.h>
+#define SHM_NAME "/radar_shared_mem"
 
 
 Radar::Radar(uint64_t& tick_counter) : tick_counter_ref(tick_counter), activeBufferIndex(0), timer(1,0), stopThreads(false) {
@@ -188,42 +189,65 @@ void Radar::removePlaneFromAirspace(int planeID) {
 
 void Radar::writeToSharedMemory() {
 	// COEN320 Lab4_5 Task 2.1
-	/*
-	You need to implement the shared memory writing process here
-	Save SharedMemory structure to shared memory
-	Make sure to use mutex to protect the buffer switching process (e.g., bufferSwitchMutex)
-	To store aircraft data, use inactiveBuffer which is obtained from getActiveBuffer() method
-	Check the code snippet below for reference
-	at the end you need to unmap the shared memory and close the file descriptor
-	e.g., munmap(<SharedMemory object, shared_mem>, SHARED_MEMORY_SIZE) and close(shm_fd)
 
+	// You need to implement the shared memory writing process here
+	// Save SharedMemory structure to shared memory
+	// Make sure to use mutex to protect the buffer switching process (e.g., bufferSwitchMutex)
+	// To store aircraft data, use inactiveBuffer which is obtained from getActiveBuffer() method
+	// Check the code snippet below for reference
+	// at the end you need to unmap the shared memory and close the file descriptor
+	// e.g., munmap(<SharedMemory object, shared_mem>, SHARED_MEMORY_SIZE) and close(shm_fd)
+	
+	// Creating file descriptor and opening shared memory
+	int shm_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
+	if (shm_fd == -1) {
+		perror("shm_open");
+		exit(EXIT_FAILURE);
+	}
+
+	// Setting the size of the shared memory
+	if (ftruncate(shm_fd, SHARED_MEMORY_SIZE) == -1) {
+		perror("ftruncate");
+		exit(EXIT_FAILURE);
+	}
+
+
+	// Mapping the shared memory into the process' address space
+	sharedMemPtr = (SharedMemory *)mmap(NULL, SHARED_MEMORY_SIZE, PROT_READ | PROT_WRITE,
+		MAP_SHARED, shm_fd, 0);
+		if (sharedMemPtr == MAP_FAILED) {
+		perror("mmap");
+		exit(EXIT_FAILURE);
+	}
 
 	// Get the active buffer based on the current active index
     std::vector<msg_plane_info>& activeBuffer = getActiveBuffer();
     // Get the current timestamp
-    shared_mem->timestamp = tick_counter_ref;
+    sharedMemPtr->timestamp = tick_counter_ref;
 
+	bufferSwitchMutex.lock();
 	// Check if activeBuffer is empty and set the flag accordingly
 	if (activeBuffer.empty()) {
 		std::vector<msg_plane_info>& inactiveBuffer = planesInAirspaceData[(activeBufferIndex + 1) % 2];
 		if (!inactiveBuffer.empty()){
-			shared_mem->is_empty.store(false);
-			shared_mem->count = inactiveBuffer.size();
-			std::memcpy(shared_mem->plane_data, inactiveBuffer.data(), inactiveBuffer.size() * sizeof(msg_plane_info));
+			sharedMemPtr->is_empty.store(false);
+			sharedMemPtr->count = inactiveBuffer.size();
+			std::memcpy(sharedMemPtr->plane_data, inactiveBuffer.data(), inactiveBuffer.size() * sizeof(msg_plane_info));
 			inactiveBuffer.clear();
 		}
-		shared_mem->is_empty.store(true);
-		shared_mem->count = 0;  // No planes
+		sharedMemPtr->is_empty.store(true);
+		sharedMemPtr->count = 0;  // No planes
 	} else {
-            shared_mem->is_empty.store(false);
-            shared_mem->count = activeBuffer.size();
-            std::memcpy(shared_mem->plane_data, activeBuffer.data(), activeBuffer.size() * sizeof(msg_plane_info));
+            sharedMemPtr->is_empty.store(false);
+            sharedMemPtr->count = activeBuffer.size();
+            std::memcpy(sharedMemPtr->plane_data, activeBuffer.data(), activeBuffer.size() * sizeof(msg_plane_info));
             activeBuffer.clear();
         }
+	bufferSwitchMutex.unlock();
 	// clean up
+	munmap(sharedMemPtr, SHARED_MEMORY_SIZE)
+	close(shm_fd);
 
-	*/
-	
 }
 
 void Radar::clearSharedMemory() {
@@ -237,4 +261,35 @@ void Radar::clearSharedMemory() {
 	//sharedMemPtr->is_empty.store(true);  // Set the is_empty flag to false to not block reader
 	// Finally unmap the shared memory and close the file descriptor
 	
+		// Creating file descriptor and opening shared memory
+	int shm_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
+	if (shm_fd == -1) {
+		perror("shm_open");
+		exit(EXIT_FAILURE);
+	}
+
+	// Setting the size of the shared memory
+	if (ftruncate(shm_fd, SHARED_MEMORY_SIZE) == -1) {
+		perror("ftruncate");
+		exit(EXIT_FAILURE);
+	}
+
+
+	// Mapping the shared memory into the process' address space
+	sharedMemPtr = (SharedMemory *)mmap(NULL, SHARED_MEMORY_SIZE, PROT_READ | PROT_WRITE,
+		MAP_SHARED, shm_fd, 0);
+		if (sharedMemPtr == MAP_FAILED) {
+		perror("mmap");
+		exit(EXIT_FAILURE);
+	}
+
+	std::memset(sharedMemPtr->plane_data, 0, sizeof(sharedMemPtr->plane_data));
+	sharedMemPtr->count = 0;
+	sharedMemPtr->is_empty.store(true);
+	sharedMemPtr->start.store(false);
+	sharedMemPtr->timestamp = 0;
+
+	munmap(sharedMemPtr, SHARED_MEMORY_SIZE);
+	close(shm_fd);
+
 }
