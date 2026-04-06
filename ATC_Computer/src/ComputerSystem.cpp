@@ -8,6 +8,9 @@
 
 // COEN320 Task 3.1, set the display channel name
 #define display_channel_name "display"
+#define SHM_NAME "/radar_shared_mem"
+#define SHARED_MEMORY_SIZE sizeof(SharedMemory)
+
 
 
 ComputerSystem::ComputerSystem() : shm_fd(-1), shared_mem(nullptr), running(false) {}
@@ -24,9 +27,23 @@ bool ComputerSystem::initializeSharedMemory() {
 		// Attempt to open the shared memory object (You need to use the same name as Task 2 in Radar)
         // In case of error, retry until successful
         // e.g. shm_open("/radar_shared_mem", O_RDONLY, 0666);
+        shm_fd = shm_open(SHM_NAME, O_RDONLY, 0666);
+        while(shm_fd = -1){
+            perror("shm_open failed. Retrying to open shared memory");
+            shm_fd = shm_open(SHM_NAME, O_RDONLY, 0666);
+            if (shm_fd != -1) break;
+        }
+
         // COEN320 Task 3.3
 		// Map the shared memory object into the process's address space
         // The shared memory should be mapped to "shared_mem" (check for errors)
+        shared_mem = (SharedMemory *)mmap(NULL, SHARED_MEMORY_SIZE, PROT_READ | PROT_WRITE,
+		MAP_SHARED, shm_fd, 0);
+		if (shared_mem == MAP_FAILED) {
+		perror("mmap");
+		exit(EXIT_FAILURE);
+	}
+
         std::cout << "Shared memory initialized successfully." << std::endl;
         return true;
 	}
@@ -145,8 +162,29 @@ bool ComputerSystem::checkAxes(msg_plane_info plane1, msg_plane_info plane2) {
     // A simple approach is to just check if their positions will be within the defined constraints (e.g., CONSTRAINT_X, CONSTRAINT_Y, CONSTRAINT_Z)
     // A more accurate approach would involve calculating their future positions based on their velocities
     // and checking if those future positions will be within the defined constraints within the time constraint
-   
-    return true; // Placeholder return value; replace with actual collision detection logic
+    // Assuming 0 acceleration, eqn will be s = s0 + vt
+    double S1x = plane1.PositionX + plane1.VelocityX * timeConstraintCollisionFreq;
+    double S1y = plane1.PositionY + plane1.VelocityY * timeConstraintCollisionFreq;
+    double S1z = plane1.PositionZ + plane1.VelocityZ * timeConstraintCollisionFreq;
+
+    double S2x = plane2.PositionX + plane2.VelocityX * timeConstraintCollisionFreq;
+    double S2y = plane2.PositionY + plane2.VelocityY * timeConstraintCollisionFreq;
+    double S2z = plane2.PositionZ + plane2.VelocityZ * timeConstraintCollisionFreq;
+
+    double deltaX = fabs(S1x - S2x);
+    double deltaY = fabs(S1y - S2y);
+    double deltaZ = fabs(S1z - S2z);
+
+    double deltaSx, deltaSy, deltaSz;
+    deltaSx = fabs(plane1.PositionX - plane2.PositionX);
+    deltaSy = fabs(plane1.PositionY - plane2.PositionY);
+    deltaSz = fabs(plane1.PositionZ - plane2.PositionZ);
+
+    if (deltaX <= CONSTRAINT_X && deltaY <= CONSTRAINT_Y && deltaZ <= CONSTRAINT_Z || deltaSx <= CONSTRAINT_X && deltaSy <= CONSTRAINT_Y  && deltaSz <= CONSTRAINT_Z) {
+        return true;
+    } 
+
+    return false; // Placeholder return value; replace with actual collision detection logic
 }
 
 
