@@ -53,16 +53,20 @@ void Radar::ListenAirspaceArrivalAndDeparture() {
     while (!stopThreads.load()) {
         // Replace with IPC
         Message msg;
-        int rcvid = MsgReceive(Radar_channel->chid, &msg, sizeof(msg), nullptr); // Replace with actual channel ID
-        if (rcvid == -1) {
-        	// Silently skip if MsgReceive fails, but no crash happens
-        	std::cerr << "Error receiving airspace message:" << strerror(errno) << std::endl;
-        	continue;
-        }
+		int rcvid = MsgReceive(Radar_channel->chid, &msg, sizeof(msg), nullptr);
+		if (rcvid == -1) {
+			// Silently skip if MsgReceive fails, but no crash happens
+			std::cerr << "Error receiving airspace message:" << strerror(errno) << std::endl;
+			continue;
+		}
 
-        // Reply back to the client
-        int msg_ret = msg.planeID;
-        MsgReply(rcvid, 0, &msg_ret, sizeof(msg_ret)); // Send plane's ID back to airplane
+		if (rcvid == 0) {
+			continue;  // Pulses do not need a reply so skip silently
+		}
+
+		// Reply back to the client
+		int msg_ret = msg.planeID;
+		MsgReply(rcvid, 0, &msg_ret, sizeof(msg_ret));
 
         switch (msg.type) {
         case MessageType::ENTER_AIRSPACE:

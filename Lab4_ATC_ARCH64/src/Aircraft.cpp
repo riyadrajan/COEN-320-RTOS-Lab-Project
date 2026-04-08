@@ -234,6 +234,7 @@ int Aircraft::updatePosition() {
     }
 
     name_detach(Plane_channel, 0);
+    name_close(Radar_id);  
     pthread_exit(NULL);
 
     return 0;
