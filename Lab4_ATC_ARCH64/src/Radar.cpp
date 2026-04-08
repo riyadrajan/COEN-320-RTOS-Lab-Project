@@ -1,6 +1,6 @@
 #include "Radar.h"
 #include <sys/dispatch.h>
-#define SHM_NAME "/radar_shared_mem"
+#define SHM_NAME "/radar_shared_mem_40290831"
 
 
 Radar::Radar(uint64_t& tick_counter) : tick_counter_ref(tick_counter), activeBufferIndex(0), timer(1,0), stopThreads(false) {
@@ -156,20 +156,16 @@ msg_plane_info Radar::getAircraftData(int id) {
 	requestMsg.planeID = id;
 	requestMsg.data = NULL;
 
-	// Structure to hold the received position data
-	Message receiveMessage;
+	// Receive msg_plane_info directly — avoids cross-process void* dereference
+	msg_plane_info received_info{};
 
-	// Send the position request to the aircraft and receive the response
-	if (MsgSend(plane_channel, &requestMsg, sizeof(requestMsg), &receiveMessage, sizeof(receiveMessage)) == -1) {
+	// Send the position request; Aircraft replies with msg_plane_info bytes
+	if (MsgSend(plane_channel, &requestMsg, sizeof(requestMsg), &received_info, sizeof(received_info)) == -1) {
 		name_close(plane_channel);
 		throw std::runtime_error("Radar: Error occurred while sending request message to aircraft");
 	}
 
-	msg_plane_info received_info = *static_cast<msg_plane_info*>(receiveMessage.data);
-
-	// Close the communication channel with the aircraft
 	name_close(plane_channel);
-
 	return received_info;
 }
 
@@ -229,14 +225,16 @@ void Radar::writeToSharedMemory() {
 	// Check if activeBuffer is empty and set the flag accordingly
 	if (activeBuffer.empty()) {
 		std::vector<msg_plane_info>& inactiveBuffer = planesInAirspaceData[(activeBufferIndex + 1) % 2];
-		if (!inactiveBuffer.empty()){
+		if (!inactiveBuffer.empty()) {
 			sharedMemPtr->is_empty.store(false);
 			sharedMemPtr->count = inactiveBuffer.size();
 			std::memcpy(sharedMemPtr->plane_data, inactiveBuffer.data(), inactiveBuffer.size() * sizeof(msg_plane_info));
 			inactiveBuffer.clear();
+		} else {
+			// Truly empty — no planes in either buffer
+			sharedMemPtr->is_empty.store(true);
+			sharedMemPtr->count = 0;
 		}
-		sharedMemPtr->is_empty.store(true);
-		sharedMemPtr->count = 0;  // No planes
 	} else {
             sharedMemPtr->is_empty.store(false);
             sharedMemPtr->count = activeBuffer.size();
@@ -245,7 +243,7 @@ void Radar::writeToSharedMemory() {
         }
 	bufferSwitchMutex.unlock();
 	// clean up
-	munmap(sharedMemPtr, SHARED_MEMORY_SIZE)
+	munmap(sharedMemPtr, SHARED_MEMORY_SIZE);
 	close(shm_fd);
 
 }
@@ -286,7 +284,7 @@ void Radar::clearSharedMemory() {
 	std::memset(sharedMemPtr->plane_data, 0, sizeof(sharedMemPtr->plane_data));
 	sharedMemPtr->count = 0;
 	sharedMemPtr->is_empty.store(true);
-	sharedMemPtr->start.store(false);
+	sharedMemPtr->start = false;
 	sharedMemPtr->timestamp = 0;
 
 	munmap(sharedMemPtr, SHARED_MEMORY_SIZE);

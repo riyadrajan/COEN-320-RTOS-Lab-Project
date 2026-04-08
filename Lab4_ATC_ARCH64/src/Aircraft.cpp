@@ -51,9 +51,9 @@ void Aircraft::printInitialAircraftData() const {
 
 
 void Aircraft::changeHeading(double Vx, double Vy, double Vz){
-	if (Vx > 0) speedX = Vx;
-	if (Vx > 0) speedY = Vy;
-	if (Vx > 0) speedZ = Vz;
+    speedX = Vx;
+    speedY = Vy;
+    speedZ = Vz;
 }
 
 
@@ -151,14 +151,14 @@ int Aircraft::updatePosition() {
                 // Riyad - Use Message_inter_process data
                 int ok = 0;
                 switch (receivedMsg->type) {
-                    case MessageType::REQUEST_CHANGE_OF_HEADING:
+                    case MessageType::REQUEST_CHANGE_OF_HEADING: {
                         printf("Communication System: Change Heading");
                         //figure out how the velocities are sent and change it below
-                            if (receivedMsg->dataSize < sizeof(msg_change_heading)) {
-                                int err = -1;
-                                MsgReply(rcvid, EINVAL, &err, sizeof(err));
-                                break;
-                            }
+                        if (receivedMsg->dataSize < sizeof(msg_change_heading)) {
+                            int err = -1;
+                            MsgReply(rcvid, EINVAL, &err, sizeof(err));
+                            break;
+                        }
 
                         msg_change_heading heading{};
                         std::memcpy(&heading, receivedMsg->data.data(), sizeof(msg_change_heading));
@@ -166,8 +166,9 @@ int Aircraft::updatePosition() {
                         changeHeading(heading.VelocityX, heading.VelocityY, heading.VelocityZ);
                         MsgReply(rcvid, EOK, &ok, sizeof(ok));
                         break;
+                    }
                         
-                    case MessageType::REQUEST_CHANGE_POSITION:
+                    case MessageType::REQUEST_CHANGE_POSITION: {
                         printf("Communication System to Aircraft: Change Position");
                         if (receivedMsg->dataSize < sizeof(msg_change_position)) {
                             int err = -1;
@@ -182,7 +183,8 @@ int Aircraft::updatePosition() {
 
                         MsgReply(rcvid, EOK, &ok, sizeof(ok));
                         break;
-                    case MessageType::REQUEST_CHANGE_ALTITUDE:
+                    }
+                    case MessageType::REQUEST_CHANGE_ALTITUDE: {
                         printf("Communication System to Aircraft: Change Altitude");
                         if (receivedMsg->dataSize < sizeof(msg_change_heading)) {
                             int err = -1;
@@ -197,13 +199,15 @@ int Aircraft::updatePosition() {
 
                         MsgReply(rcvid, EOK, &ok, sizeof(ok));
                         break;
+                    }
                     // case MessageType::REQUEST_AUGMENTED_INFO:
                     //     printf("Communication System: Augmented Info");
                     //     //use msg_plane_info struct and send message
-                    case MessageType::EXIT:
+                    case MessageType::EXIT: {
                         printf("Communication System to Aircraft: Exit");
                         MsgReply(rcvid, EOK, &ok, sizeof(ok));
                         break;
+                    }
                     default:
                         std::cerr << "Unknown airspace message type" << std::endl;
                         MsgReply(rcvid, EOK, &ok, sizeof(ok));
@@ -214,10 +218,13 @@ int Aircraft::updatePosition() {
             	Message* receivedMsg = reinterpret_cast<Message*>(buffer);
 
             	if (receivedMsg->type == MessageType::REQUEST_POSITION) {
+            		// Reply with msg_plane_info directly — Radar receives it without pointer indirection
             		msg_plane_info positionData = {id, posX, posY, posZ, speedX, speedY, speedZ};
-            	    Message posUpdateMessage = createPositionUpdateMessage(id, positionData);
-
-            	    MsgReply(rcvid, 0, &posUpdateMessage, sizeof(posUpdateMessage)); // Send reply with position
+            	    MsgReply(rcvid, 0, &positionData, sizeof(positionData));
+            	} else {
+            	    // Always reply to avoid permanently blocking the sender
+            	    int ok = 0;
+            	    MsgReply(rcvid, EOK, &ok, sizeof(ok));
             	}
             }
         }
@@ -266,7 +273,7 @@ Message Aircraft::createExitAirspaceMessage(int planeID){
 Message Aircraft::createPositionUpdateMessage(int planeID, const msg_plane_info& info) {
 
     Message msg{};
-    msg.header = false{}
+    msg.header = false;
     msg.type = MessageType::POSITION_UPDATE; // Use the correct Message type
     msg.planeID = planeID;// Use the passed Plane ID
     msg.data = (void*)&info;  // Allocate and copy info data

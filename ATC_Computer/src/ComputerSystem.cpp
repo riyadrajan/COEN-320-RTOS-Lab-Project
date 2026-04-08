@@ -1,5 +1,6 @@
 #include "ComputerSystem.h"
 #include "ATCTimer.h"
+#include <algorithm>    // For std::min
 #include <ctime>        // For std::time_t, std::localtime
 #include <iomanip>      // For std::put_time
 #include <cmath>
@@ -8,7 +9,7 @@
 
 // COEN320 Task 3.1, set the display channel name
 #define display_channel_name "display"
-#define SHM_NAME "/radar_shared_mem"
+#define SHM_NAME "/radar_shared_mem_40290831"
 #define SHARED_MEMORY_SIZE sizeof(SharedMemory)
 
 
@@ -28,7 +29,7 @@ bool ComputerSystem::initializeSharedMemory() {
         // In case of error, retry until successful
         // e.g. shm_open("/radar_shared_mem", O_RDONLY, 0666);
         shm_fd = shm_open(SHM_NAME, O_RDONLY, 0666);
-        while(shm_fd = -1){
+        while(shm_fd == -1){
             perror("shm_open failed. Retrying to open shared memory");
             shm_fd = shm_open(SHM_NAME, O_RDONLY, 0666);
             if (shm_fd != -1) break;
@@ -37,7 +38,7 @@ bool ComputerSystem::initializeSharedMemory() {
         // COEN320 Task 3.3
 		// Map the shared memory object into the process's address space
         // The shared memory should be mapped to "shared_mem" (check for errors)
-        shared_mem = (SharedMemory *)mmap(NULL, SHARED_MEMORY_SIZE, PROT_READ | PROT_WRITE,
+        shared_mem = (SharedMemory *)mmap(NULL, SHARED_MEMORY_SIZE, PROT_READ,
 		MAP_SHARED, shm_fd, 0);
 		if (shared_mem == MAP_FAILED) {
 		perror("mmap");
@@ -60,9 +61,10 @@ void ComputerSystem::cleanupSharedMemory() {
 
 bool ComputerSystem::startMonitoring() {
     if (initializeSharedMemory()) {
-        running = true; // will be used in monitorAirspace
+        running = true;
         std::cout << "Starting monitoring thread." << std::endl;
         monitorThread = std::thread(&ComputerSystem::monitorAirspace, this);
+        monitorOperatorInput = std::thread(&ComputerSystem::processMessage, this);
         return true;
     } else {
         std::cerr << "Failed to initialize shared memory. Monitoring not started.\n";
@@ -73,6 +75,9 @@ bool ComputerSystem::startMonitoring() {
 void ComputerSystem::joinThread() {
     if (monitorThread.joinable()) {
         monitorThread.join();
+    }
+    if (monitorOperatorInput.joinable()) {
+        monitorOperatorInput.join();
     }
 }
 
@@ -122,36 +127,35 @@ void ComputerSystem::monitorAirspace() {
 
 void ComputerSystem::checkCollision(uint64_t currentTime, std::vector<msg_plane_info> planes) {
     std::cout << "Checking for collisions at time: " << currentTime << std::endl;
-    // COEN320 Task 3.4
-    // detect collisions between planes in the airspace within the time constraint
-    // You need to Iterate through each pair of planes and in case of collision,
-    // store the pair of plane IDs that are predicted to collide
-    // You can use the function checkAxes provided below to check if two planes will collide
-    // COEN320 Task 3.5
-    // in case of collision, send message to Display system
-    /*
-    HINT:
-    In case of collision a Message (type Message_inter_process) should be sent to the Display system
-    The data field of the message should contain the list of pairs of plane IDs that are predicted to collide
-    Make sure to fill dataSize field of the message appropriately
-    e.g. (here a std::pair<int,int> is used to represent a pair of colliding planes)
-    // Prepare the message
-    Message_inter_process msg_to_send;
+
     std::vector<std::pair<int, int>> collisionPairs;
-    // Store the collision pair plane ID 0 and 1
-    collisionPairs.emplace_back(<plane 0>, <plane 1>);
-    // Serialize collisionPairs
-    size_t numPairs = collisionPairs.size();
-    size_t dataSize = numPairs * sizeof(std::pair<int, int>);
 
-    msg_to_send.planeID = -1;
-    msg_to_send.type = MessageType::COLLISION_DETECTED;
-    msg_to_send.dataSize = dataSize;
-    std::memcpy(msg_to_send.data.data(), collisionPairs.data(), dataSize);
-    sendCollisionToDisplay(msg_to_send);
+    // COEN320 Task 3.4: check every unique pair of planes
+    for (size_t i = 0; i < planes.size(); ++i) {
+        for (size_t j = i + 1; j < planes.size(); ++j) {
+            if (checkAxes(planes[i], planes[j])) {
+                std::cout << "*** COLLISION WARNING: Aircraft "
+                          << planes[i].id << " and " << planes[j].id << " ***\n";
+                collisionPairs.emplace_back(planes[i].id, planes[j].id);
+            }
+        }
+    }
 
-    */
-    
+    // COEN320 Task 3.5: send collision alert to Display
+    if (!collisionPairs.empty()) {
+        Message_inter_process msg_to_send;
+        // data array is 256 bytes; each pair<int,int> is 8 bytes → max 32 pairs per message
+        constexpr size_t kMaxPairs = 256 / sizeof(std::pair<int, int>);
+        size_t numPairs = std::min(collisionPairs.size(), kMaxPairs);
+        size_t dataSize = numPairs * sizeof(std::pair<int, int>);
+
+        msg_to_send.header = true;
+        msg_to_send.planeID = -1;
+        msg_to_send.type = MessageType::COLLISION_DETECTED;
+        msg_to_send.dataSize = dataSize;
+        std::memcpy(msg_to_send.data.data(), collisionPairs.data(), dataSize);
+        sendCollisionToDisplay(msg_to_send);
+    }
 }
 
 bool ComputerSystem::checkAxes(msg_plane_info plane1, msg_plane_info plane2) {
@@ -199,4 +203,61 @@ void ComputerSystem::sendCollisionToDisplay(const Message_inter_process& msg){
 	if (status == -1) {
 		perror("Computer system: Error occurred while sending message to display channel");
 	}
+    name_close(display_channel);
+}
+
+// COEN320 Task 4: receive commands from OperatorConsole and route to CommunicationsSystem
+void ComputerSystem::processMessage() {
+    name_attach_t* channel = name_attach(NULL, "COMP_SYS_40290831", 0);
+    if (channel == NULL) {
+        perror("ComputerSystem: name_attach for operator channel failed");
+        return;
+    }
+
+    std::cout << "ComputerSystem: operator channel COMP_SYS_40290831 ready.\n";
+
+    while (running) {
+        Message_inter_process msg{};
+        int rcvid = MsgReceive(channel->chid, &msg, sizeof(msg), NULL);
+        if (rcvid == -1) {
+            perror("ComputerSystem: MsgReceive on operator channel failed");
+            continue;
+        }
+
+        int ok = 0;
+        MsgReply(rcvid, EOK, &ok, sizeof(ok));
+
+        if (msg.type == MessageType::CHANGE_TIME_CONSTRAINT_COLLISIONS) {
+            handleTimeConstraintChange(msg);
+        } else {
+            // Forward heading/position/altitude commands to CommunicationsSystem
+            sendMessagesToComms(msg);
+        }
+    }
+
+    name_detach(channel, 0);
+}
+
+void ComputerSystem::sendMessagesToComms(const Message_inter_process& msg) {
+    int ch = name_open("ATC_COMMS_40290831", 0);
+    if (ch == -1) {
+        perror("ComputerSystem: could not open CommunicationsSystem channel");
+        return;
+    }
+    int reply = 0;
+    if (MsgSend(ch, &msg, sizeof(msg), &reply, sizeof(reply)) == -1) {
+        perror("ComputerSystem: MsgSend to CommunicationsSystem failed");
+    }
+    name_close(ch);
+}
+
+void ComputerSystem::handleTimeConstraintChange(const Message_inter_process& msg) {
+    if (msg.dataSize < sizeof(int)) {
+        std::cerr << "ComputerSystem: invalid time constraint message size\n";
+        return;
+    }
+    int n = 0;
+    std::memcpy(&n, msg.data.data(), sizeof(int));
+    timeConstraintCollisionFreq = n;
+    std::cout << "ComputerSystem: collision time constraint updated to " << n << " seconds.\n";
 }
