@@ -184,7 +184,7 @@ bool ComputerSystem::checkAxes(msg_plane_info plane1, msg_plane_info plane2) {
     deltaSy = fabs(plane1.PositionY - plane2.PositionY);
     deltaSz = fabs(plane1.PositionZ - plane2.PositionZ);
 
-    if (deltaX <= CONSTRAINT_X && deltaY <= CONSTRAINT_Y && deltaZ <= CONSTRAINT_Z || deltaSx <= CONSTRAINT_X && deltaSy <= CONSTRAINT_Y  && deltaSz <= CONSTRAINT_Z) {
+    if ( (deltaX <= CONSTRAINT_X && deltaY <= CONSTRAINT_Y && deltaZ <= CONSTRAINT_Z) || (deltaSx <= CONSTRAINT_X && deltaSy <= CONSTRAINT_Y  && deltaSz <= CONSTRAINT_Z)) {
         return true;
     } 
 

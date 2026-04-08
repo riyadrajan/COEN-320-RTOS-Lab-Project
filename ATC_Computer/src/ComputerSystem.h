@@ -37,11 +37,11 @@ private:
 
     //Handle messages from operator
     void processMessage();
-    void sendMessagesToComms(const Message& msg);
-    void handleTimeConstraintChange(const Message& msg);
+    void sendMessagesToComms(const Message_inter_process& msg);
+    void handleTimeConstraintChange(const Message_inter_process& msg);
     void sendCollisionToDisplay(const Message_inter_process& msg);
 
-    int timeConstraintCollisionFreq = 180;
+    std::atomic<int> timeConstraintCollisionFreq{180};
 
 
 

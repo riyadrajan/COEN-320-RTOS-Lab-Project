@@ -10,9 +10,10 @@ class CommunicationsSystem {
 public:
 	CommunicationsSystem();
 	~CommunicationsSystem();
+	void start();
 private:
     void HandleCommunications();
-    void messageAircraft(const Message& msg);
+    void messageAircraft(const Message_inter_process& msg);
     std::thread Communications_System;
 };
 
